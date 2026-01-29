@@ -1,0 +1,1005 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2761
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 import os\
+import sqlite3\
+import csv\
+import io\
+from datetime import datetime\
+from flask import Flask, g, redirect, render_template_string, request, url_for, flash\
+\
+APP_TITLE = "KYI \'97 Know Your Investor (Mock)"\
+DB_PATH = os.path.join(os.path.dirname(__file__), "kyi.db")\
+\
+app = Flask(__name__)\
+app.secret_key = "dev-secret-change-me"\
+\
+\
+# -----------------------------\
+# DB helpers\
+# -----------------------------\
+def get_db():\
+    if "db" not in g:\
+        g.db = sqlite3.connect(DB_PATH)\
+        g.db.row_factory = sqlite3.Row\
+        g.db.execute("PRAGMA foreign_keys = ON;")\
+    return g.db\
+\
+\
+@app.teardown_appcontext\
+def close_db(_):\
+    db = g.pop("db", None)\
+    if db is not None:\
+        db.close()\
+\
+\
+def init_db():\
+    db = get_db()\
+    db.executescript(\
+        """\
+        CREATE TABLE IF NOT EXISTS investors (\
+            id INTEGER PRIMARY KEY AUTOINCREMENT,\
+            full_name TEXT NOT NULL,\
+            email TEXT,\
+            phone TEXT,\
+            location TEXT,\
+            industry TEXT,\
+            firm TEXT,\
+            title TEXT,\
+            linkedin_url TEXT,\
+            notes TEXT,\
+            created_at TEXT,\
+            updated_at TEXT\
+        );\
+\
+        -- Connections uploaded for a given investor (Orbit data)\
+        CREATE TABLE IF NOT EXISTS connections (\
+            id INTEGER PRIMARY KEY AUTOINCREMENT,\
+            investor_id INTEGER NOT NULL,\
+            first_name TEXT,\
+            last_name TEXT,\
+            full_name TEXT,\
+            company TEXT,\
+            position TEXT,\
+            location TEXT,\
+            linkedin_url TEXT,\
+            connected_on TEXT,\
+            created_at TEXT,\
+            FOREIGN KEY (investor_id) REFERENCES investors(id) ON DELETE CASCADE\
+        );\
+\
+        CREATE INDEX IF NOT EXISTS idx_connections_investor ON connections(investor_id);\
+        """\
+    )\
+    db.commit()\
+\
+\
+@app.before_request\
+def _ensure_db():\
+    init_db()\
+\
+\
+def now_iso():\
+    return datetime.utcnow().isoformat(timespec="seconds")\
+\
+\
+# -----------------------------\
+# CSV parsing (LinkedIn-friendly)\
+# -----------------------------\
+def normalize_header(h: str) -> str:\
+    return (h or "").strip().lower().replace("\\ufeff", "")\
+\
+\
+def get_first(row, keys, default=""):\
+    """\
+    Tries keys in order. Keys are already normalized.\
+    """\
+    for k in keys:\
+        if k in row and row[k] is not None and str(row[k]).strip() != "":\
+            return str(row[k]).strip()\
+    return default\
+\
+\
+def parse_connections_csv(file_bytes: bytes):\
+    """\
+    Accepts LinkedIn connections export OR "close enough" CSVs.\
+    Expected fields (any subset):\
+      - First Name / Last Name OR Name\
+      - Company\
+      - Position\
+      - Location\
+      - Connected On\
+      - URL / Profile URL / LinkedIn URL\
+    """\
+    text = file_bytes.decode("utf-8", errors="ignore")\
+    f = io.StringIO(text)\
+    reader = csv.DictReader(f)\
+\
+    if not reader.fieldnames:\
+        raise ValueError("CSV has no headers.")\
+\
+    # Normalize headers\
+    normalized_fieldnames = [normalize_header(h) for h in reader.fieldnames]\
+    # Map original -> normalized by index\
+    # We'll rebuild each row dict with normalized keys.\
+    records = []\
+    for raw in reader:\
+        norm_row = \{\}\
+        for orig_key, norm_key in zip(reader.fieldnames, normalized_fieldnames):\
+            norm_row[norm_key] = raw.get(orig_key)\
+\
+        first = get_first(norm_row, ["first name", "firstname", "given name"])\
+        last = get_first(norm_row, ["last name", "lastname", "surname", "family name"])\
+        name = get_first(norm_row, ["full name", "name"])\
+\
+        if not name:\
+            name = (" ".join([first, last])).strip()\
+\
+        company = get_first(norm_row, ["company", "organization", "org", "employer"])\
+        position = get_first(norm_row, ["position", "title", "job title", "headline"])\
+        location = get_first(norm_row, ["location", "geo", "region"])\
+        connected_on = get_first(norm_row, ["connected on", "connection date", "date connected"])\
+        linkedin_url = get_first(\
+            norm_row,\
+            ["url", "profile url", "linkedin url", "linkedin", "public profile url"]\
+        )\
+\
+        # Skip rows that are totally empty\
+        if not any([name, first, last, company, position, location, linkedin_url, connected_on]):\
+            continue\
+\
+        # If first/last blank but name exists, try split\
+        if (not first and not last) and name:\
+            parts = name.split()\
+            if len(parts) >= 2:\
+                first = parts[0]\
+                last = " ".join(parts[1:])\
+            else:\
+                first = name\
+                last = ""\
+\
+        records.append(\{\
+            "first_name": first,\
+            "last_name": last,\
+            "full_name": name,\
+            "company": company,\
+            "position": position,\
+            "location": location,\
+            "linkedin_url": linkedin_url,\
+            "connected_on": connected_on,\
+        \})\
+\
+    return records\
+\
+\
+# -----------------------------\
+# UI (single-template approach)\
+# -----------------------------\
+BASE_HTML = """\
+<!doctype html>\
+<html>\
+<head>\
+  <meta charset="utf-8" />\
+  <meta name="viewport" content="width=device-width,initial-scale=1" />\
+  <title>\{\{ title \}\}</title>\
+  <style>\
+    :root\{\
+      --bg:#0b0f14; --card:#121823; --muted:#9aa4b2; --text:#e8eef7; --line:#243043;\
+      --accent:#7c5cff; --accent2:#22c55e;\
+    \}\
+    *\{box-sizing:border-box\}\
+    body\{margin:0;background:linear-gradient(180deg,#070a0f 0%, #0b0f14 50%, #070a0f 100%); color:var(--text); font-family: ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;\}\
+    a\{color:inherit;text-decoration:none\}\
+    .wrap\{max-width:1100px;margin:0 auto;padding:22px;\}\
+    .topbar\{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px\}\
+    .brand\{display:flex;gap:10px;align-items:center\}\
+    .dot\{width:10px;height:10px;border-radius:50%;background:var(--accent)\}\
+    .h1\{font-size:18px;font-weight:700;letter-spacing:.2px\}\
+    .sub\{font-size:13px;color:var(--muted)\}\
+    .grid\{display:grid;grid-template-columns: 1fr; gap:14px;\}\
+    @media(min-width:900px)\{ .grid-2\{grid-template-columns: 1.2fr .8fr; \} \}\
+    .card\{background:rgba(18,24,35,.85); border:1px solid var(--line); border-radius:16px; padding:16px; box-shadow: 0 10px 30px rgba(0,0,0,.25);\}\
+    .row\{display:flex;gap:10px;flex-wrap:wrap\}\
+    .btn\{border:1px solid var(--line); background:#0d1320; color:var(--text); padding:10px 12px; border-radius:12px; cursor:pointer; font-weight:600\}\
+    .btn:hover\{border-color:#3a4a66\}\
+    .btn.primary\{background:linear-gradient(135deg,var(--accent),#3b82f6); border:0\}\
+    .btn.good\{background:linear-gradient(135deg,var(--accent2),#16a34a); border:0\}\
+    input,select,textarea\{width:100%; padding:10px 12px; border-radius:12px; border:1px solid var(--line); background:#0b1220; color:var(--text); outline:none\}\
+    textarea\{min-height:90px; resize:vertical\}\
+    label\{font-size:12px;color:var(--muted); display:block; margin-bottom:6px\}\
+    .field\{margin-bottom:10px\}\
+    .table\{width:100%; border-collapse:collapse; overflow:hidden; border-radius:12px; border:1px solid var(--line)\}\
+    .table th,.table td\{padding:10px 10px; border-bottom:1px solid var(--line); font-size:13px; vertical-align:top\}\
+    .table th\{color:var(--muted); text-align:left; font-weight:700; background:#0c1322\}\
+    .pill\{display:inline-flex; gap:6px; align-items:center; border:1px solid var(--line); padding:6px 10px; border-radius:999px; font-size:12px; color:var(--muted)\}\
+    .flash\{padding:10px 12px; border-radius:12px; border:1px solid #3a4a66; background:rgba(59,130,246,.12); margin-bottom:12px\}\
+    .tabs\{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px\}\
+    .tab\{padding:8px 10px; border-radius:999px; border:1px solid var(--line); color:var(--muted); font-weight:700; font-size:12px\}\
+    .tab.active\{color:var(--text); border-color:#3a4a66; background:#0c1322\}\
+    .muted\{color:var(--muted)\}\
+    .split\{display:grid; grid-template-columns: 1fr; gap:12px\}\
+    @media(min-width:900px)\{ .split\{grid-template-columns: 1.15fr .85fr\} \}\
+    .kpi\{display:grid; grid-template-columns: repeat(3, 1fr); gap:10px\}\
+    .kpi .card\{padding:12px\}\
+    .kpi .n\{font-size:20px; font-weight:900\}\
+    .kpi .t\{font-size:12px;color:var(--muted)\}\
+    .small\{font-size:12px\}\
+    .hr\{height:1px;background:var(--line);margin:12px 0\}\
+    .right\{display:flex; justify-content:flex-end; gap:8px\}\
+  </style>\
+\
+  <!-- vis-network for Orbit graph -->\
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>\
+</head>\
+<body>\
+  <div class="wrap">\
+    <div class="topbar">\
+      <div class="brand">\
+        <div class="dot"></div>\
+        <div>\
+          <div class="h1">\{\{ title \}\}</div>\
+          <div class="sub">\{\{ subtitle \}\}</div>\
+        </div>\
+      </div>\
+      <div class="row">\
+        <a class="btn" href="\{\{ url_for('index') \}\}">Investors</a>\
+        <a class="btn primary" href="\{\{ url_for('new_investor') \}\}">+ Add Investor</a>\
+      </div>\
+    </div>\
+\
+    \{% with messages = get_flashed_messages() %\}\
+      \{% if messages %\}\
+        \{% for m in messages %\}\
+          <div class="flash">\{\{ m \}\}</div>\
+        \{% endfor %\}\
+      \{% endif %\}\
+    \{% endwith %\}\
+\
+    \{\{ body|safe \}\}\
+  </div>\
+</body>\
+</html>\
+"""\
+\
+\
+def render_page(body_html, subtitle="Know Your Investor mock"):\
+    return render_template_string(\
+        BASE_HTML,\
+        title=APP_TITLE,\
+        subtitle=subtitle,\
+        body=body_html\
+    )\
+\
+\
+# -----------------------------\
+# Routes\
+# -----------------------------\
+@app.route("/")\
+def index():\
+    db = get_db()\
+    investors = db.execute(\
+        "SELECT * FROM investors ORDER BY updated_at DESC"\
+    ).fetchall()\
+\
+    body = render_template_string(\
+        """\
+        <div class="card">\
+          <div class="row" style="justify-content:space-between;align-items:center">\
+            <div>\
+              <div style="font-size:16px;font-weight:900">Investors</div>\
+              <div class="muted small">Add people, click in, manage their orbit (connections \uc0\u8594  companies).</div>\
+            </div>\
+            <a class="btn primary" href="\{\{ url_for('new_investor') \}\}">+ Add Investor</a>\
+          </div>\
+          <div class="hr"></div>\
+\
+          \{% if not investors %\}\
+            <div class="muted">No investors yet. Click \'93Add Investor\'94 and create Kevin Wallace or whoever.</div>\
+          \{% else %\}\
+            <table class="table">\
+              <thead>\
+                <tr>\
+                  <th>Name</th>\
+                  <th>Company / Firm</th>\
+                  <th>Location</th>\
+                  <th>Industry</th>\
+                  <th>Updated</th>\
+                </tr>\
+              </thead>\
+              <tbody>\
+                \{% for inv in investors %\}\
+                  <tr>\
+                    <td>\
+                      <a href="\{\{ url_for('investor_profile', investor_id=inv['id']) \}\}" style="font-weight:800">\
+                        \{\{ inv['full_name'] \}\}\
+                      </a>\
+                      <div class="muted small">\{\{ inv['email'] or '' \}\}</div>\
+                    </td>\
+                    <td class="small">\
+                      \{\{ inv['firm'] or '' \}\}\
+                      <div class="muted">\{\{ inv['title'] or '' \}\}</div>\
+                    </td>\
+                    <td class="small">\{\{ inv['location'] or '' \}\}</td>\
+                    <td class="small">\{\{ inv['industry'] or '' \}\}</td>\
+                    <td class="small muted">\{\{ (inv['updated_at'] or '')[:19].replace('T',' ') \}\}</td>\
+                  </tr>\
+                \{% endfor %\}\
+              </tbody>\
+            </table>\
+          \{% endif %\}\
+        </div>\
+        """,\
+        investors=investors,\
+    )\
+    return render_page(body,\
+\
+\
+subtitle="Investors list")\
+\
+\
+@app.route("/investors/new", methods=["GET", "POST"])\
+def new_investor():\
+    if request.method == "POST":\
+        full_name = (request.form.get("full_name") or "").strip()\
+        if not full_name:\
+            flash("Name is required.")\
+            return redirect(url_for("new_investor"))\
+\
+        db = get_db()\
+        now = now_iso()\
+        db.execute(\
+            """\
+            INSERT INTO investors\
+            (full_name, email, phone, location, industry, firm, title, linkedin_url, notes, created_at, updated_at)\
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)\
+            """,\
+            (\
+                full_name,\
+                (request.form.get("email") or "").strip(),\
+                (request.form.get("phone") or "").strip(),\
+                (request.form.get("location") or "").strip(),\
+                (request.form.get("industry") or "").strip(),\
+                (request.form.get("firm") or "").strip(),\
+                (request.form.get("title") or "").strip(),\
+                (request.form.get("linkedin_url") or "").strip(),\
+                (request.form.get("notes") or "").strip(),\
+                now,\
+                now,\
+            ),\
+        )\
+        db.commit()\
+        investor_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]\
+        flash("Investor created.")\
+        return redirect(url_for("investor_profile", investor_id=investor_id))\
+\
+    body = """\
+    <div class="grid grid-2">\
+      <div class="card">\
+        <div style="font-size:16px;font-weight:900">Add Investor</div>\
+        <div class="muted small">Create Kevin Wallace, then click into the profile and upload connections on the Orbit tab.</div>\
+        <div class="hr"></div>\
+        <form method="POST">\
+          <div class="field">\
+            <label>Full Name *</label>\
+            <input name="full_name" placeholder="Kevin Wallace" required />\
+          </div>\
+\
+          <div class="split">\
+            <div class="field">\
+              <label>Email</label>\
+              <input name="email" placeholder="kevin@dwgc.com" />\
+            </div>\
+            <div class="field">\
+              <label>Phone</label>\
+              <input name="phone" placeholder="(555) 555-5555" />\
+            </div>\
+          </div>\
+\
+          <div class="split">\
+            <div class="field">\
+              <label>Location</label>\
+              <input name="location" placeholder="Philadelphia, PA" />\
+            </div>\
+            <div class="field">\
+              <label>Industry</label>\
+              <input name="industry" placeholder="Private Equity / Ops / SaaS" />\
+            </div>\
+          </div>\
+\
+          <div class="split">\
+            <div class="field">\
+              <label>Firm / Organization</label>\
+              <input name="firm" placeholder="DW Growth & Capital" />\
+            </div>\
+            <div class="field">\
+              <label>Title</label>\
+              <input name="title" placeholder="COO / Partner" />\
+            </div>\
+          </div>\
+\
+          <div class="field">\
+            <label>LinkedIn URL</label>\
+            <input name="linkedin_url" placeholder="https://www.linkedin.com/in/..." />\
+          </div>\
+\
+          <div class="field">\
+            <label>Notes</label>\
+            <textarea name="notes" placeholder="Anything important about this investor..."></textarea>\
+          </div>\
+\
+          <div class="right">\
+            <a class="btn" href="/">Cancel</a>\
+            <button class="btn primary" type="submit">Create</button>\
+          </div>\
+        </form>\
+      </div>\
+\
+      <div class="card">\
+        <div style="font-size:16px;font-weight:900">What this mock supports</div>\
+        <div class="hr"></div>\
+        <div class="pill">\uc0\u9989  Investor Profiles</div>\
+        <div class="pill">\uc0\u9989  Tabs (Info / Orbit)</div>\
+        <div class="pill">\uc0\u9989  Orbit from CSV Upload</div>\
+        <div class="pill">\uc0\u9989  Companies outer ring</div>\
+        <div class="pill">\uc0\u9989  People inner ring</div>\
+        <div class="pill">\uc0\u9989  Edges person \u8594  company</div>\
+        <div class="muted small" style="margin-top:10px">\
+          Upload a LinkedIn connections export CSV in the Orbit tab. It will dedupe companies and auto-generate the orbit graph.\
+        </div>\
+      </div>\
+    </div>\
+    """\
+    return render_page(body, subtitle="Create investor")\
+\
+\
+@app.route("/investor/<int:investor_id>")\
+def investor_profile(investor_id: int):\
+    tab = (request.args.get("tab") or "info").lower().strip()\
+    if tab not in ("info", "orbit"):\
+        tab = "info"\
+\
+    db = get_db()\
+    inv = db.execute("SELECT * FROM investors WHERE id = ?", (investor_id,)).fetchone()\
+    if not inv:\
+        flash("Investor not found.")\
+        return redirect(url_for("index"))\
+\
+    # Orbit counts\
+    conn_count = db.execute(\
+        "SELECT COUNT(*) AS c FROM connections WHERE investor_id = ?",\
+        (investor_id,)\
+    ).fetchone()["c"]\
+\
+    company_count = db.execute(\
+        "SELECT COUNT(DISTINCT COALESCE(NULLIF(TRIM(company),''),'(No Company)')) AS c FROM connections WHERE investor_id = ?",\
+        (investor_id,)\
+    ).fetchone()["c"]\
+\
+    # Tabs UI\
+    tabs_html = render_template_string(\
+        """\
+        <div class="tabs">\
+          <a class="tab \{\{ 'active' if tab=='info' else '' \}\}" href="\{\{ url_for('investor_profile', investor_id=inv['id'], tab='info') \}\}">Info</a>\
+          <a class="tab \{\{ 'active' if tab=='orbit' else '' \}\}" href="\{\{ url_for('investor_profile', investor_id=inv['id'], tab='orbit') \}\}">Orbit</a>\
+        </div>\
+        """,\
+        inv=inv, tab=tab\
+    )\
+\
+    header_html = render_template_string(\
+        """\
+        <div class="card">\
+          <div class="row" style="justify-content:space-between;align-items:flex-start">\
+            <div>\
+              <div style="font-size:18px;font-weight:950">\{\{ inv['full_name'] \}\}</div>\
+              <div class="muted small">\
+                \{\{ inv['firm'] or '' \}\}\{% if inv['firm'] and inv['title'] %\} \'95 \{% endif %\}\{\{ inv['title'] or '' \}\}\
+              </div>\
+              <div class="row" style="margin-top:8px">\
+                \{% if inv['email'] %\}<div class="pill">\uc0\u55357 \u56551  \{\{ inv['email'] \}\}</div>\{% endif %\}\
+                \{% if inv['phone'] %\}<div class="pill">\uc0\u55357 \u56542  \{\{ inv['phone'] \}\}</div>\{% endif %\}\
+                \{% if inv['location'] %\}<div class="pill">\uc0\u55357 \u56525  \{\{ inv['location'] \}\}</div>\{% endif %\}\
+                \{% if inv['industry'] %\}<div class="pill">\uc0\u55356 \u57335 \u65039  \{\{ inv['industry'] \}\}</div>\{% endif %\}\
+              </div>\
+            </div>\
+            <div class="row">\
+              <a class="btn" href="\{\{ url_for('edit_investor', investor_id=inv['id']) \}\}">Edit</a>\
+              <a class="btn" href="\{\{ url_for('delete_investor', investor_id=inv['id']) \}\}" onclick="return confirm('Delete this investor and all orbit data?')">Delete</a>\
+            </div>\
+          </div>\
+        </div>\
+        """,\
+        inv=inv\
+    )\
+\
+    # Tab bodies\
+    if tab == "info":\
+        body_inner = render_template_string(\
+            """\
+            <div class="card">\
+              <div style="font-size:16px;font-weight:900">Investor Information</div>\
+              <div class="hr"></div>\
+\
+              <div class="split">\
+                <div>\
+                  <div class="field">\
+                    <label>Full Name</label>\
+                    <div>\{\{ inv['full_name'] \}\}</div>\
+                  </div>\
+                  <div class="field">\
+                    <label>Email</label>\
+                    <div class="muted">\{\{ inv['email'] or '\'97' \}\}</div>\
+                  </div>\
+                  <div class="field">\
+                    <label>Phone</label>\
+                    <div class="muted">\{\{ inv['phone'] or '\'97' \}\}</div>\
+                  </div>\
+                  <div class="field">\
+                    <label>Location</label>\
+                    <div class="muted">\{\{ inv['location'] or '\'97' \}\}</div>\
+                  </div>\
+                </div>\
+\
+                <div>\
+                  <div class="field">\
+                    <label>Firm / Organization</label>\
+                    <div class="muted">\{\{ inv['firm'] or '\'97' \}\}</div>\
+                  </div>\
+                  <div class="field">\
+                    <label>Title</label>\
+                    <div class="muted">\{\{ inv['title'] or '\'97' \}\}</div>\
+                  </div>\
+                  <div class="field">\
+                    <label>Industry</label>\
+                    <div class="muted">\{\{ inv['industry'] or '\'97' \}\}</div>\
+                  </div>\
+                  <div class="field">\
+                    <label>LinkedIn URL</label>\
+                    \{% if inv['linkedin_url'] %\}\
+                      <div><a class="btn" href="\{\{ inv['linkedin_url'] \}\}" target="_blank">Open LinkedIn</a></div>\
+                    \{% else %\}\
+                      <div class="muted">\'97</div>\
+                    \{% endif %\}\
+                  </div>\
+                </div>\
+              </div>\
+\
+              <div class="field">\
+                <label>Notes</label>\
+                <div class="muted" style="white-space:pre-wrap">\{\{ inv['notes'] or '\'97' \}\}</div>\
+              </div>\
+            </div>\
+            """,\
+            inv=inv\
+        )\
+\
+    else:\
+        # Orbit tab: pull connections and build graph data\
+        rows = db.execute(\
+            """\
+            SELECT * FROM connections\
+            WHERE investor_id = ?\
+            ORDER BY created_at DESC\
+            LIMIT 5000\
+            """,\
+            (investor_id,)\
+        ).fetchall()\
+\
+        # Build deduped sets for JS\
+        # Companies (outer ring)\
+        companies = \{\}\
+        people = []\
+\
+        for r in rows:\
+            company = (r["company"] or "").strip()\
+            if not company:\
+                company = "(No Company)"\
+            companies.setdefault(company, 0)\
+            companies[company] += 1\
+\
+            people.append(\{\
+                "id": r["id"],\
+                "name": (r["full_name"] or "").strip() or (f"\{r['first_name'] or ''\} \{r['last_name'] or ''\}".strip()),\
+                "company": company,\
+                "title": (r["position"] or "").strip(),\
+                "location": (r["location"] or "").strip(),\
+                "linkedin_url": (r["linkedin_url"] or "").strip(),\
+            \})\
+\
+        company_list = [\{"company": k, "count": v\} for k, v in companies.items()]\
+        # sort companies by count desc then name\
+        company_list.sort(key=lambda x: (-x["count"], x["company"].lower()))\
+\
+        body_inner = render_template_string(\
+            """\
+            <div class="grid grid-2">\
+              <div class="card">\
+                <div class="row" style="justify-content:space-between;align-items:center">\
+                  <div>\
+                    <div style="font-size:16px;font-weight:900">Orbit</div>\
+                    <div class="muted small">Outer ring = companies. Inner ring = people. Lines connect people \uc0\u8594  their company.</div>\
+                  </div>\
+                  <div class="row">\
+                    <a class="btn" href="\{\{ url_for('clear_orbit', investor_id=inv['id']) \}\}" onclick="return confirm('Clear all uploaded connections for this investor?')">Clear Orbit</a>\
+                  </div>\
+                </div>\
+\
+                <div class="hr"></div>\
+\
+                <form method="POST" action="\{\{ url_for('upload_orbit', investor_id=inv['id']) \}\}" enctype="multipart/form-data">\
+                  <div class="field">\
+                    <label>Upload LinkedIn Connections CSV</label>\
+                    <input type="file" name="file" accept=".csv" required />\
+                    <div class="muted small" style="margin-top:6px">\
+                      Tip: LinkedIn\'92s export usually includes headers like \'93First Name, Last Name, Company, Position, Connected On\'94.\
+                      This tool also accepts \'93close enough\'94 CSVs.\
+                    </div>\
+                  </div>\
+                  <div class="right">\
+                    <button class="btn good" type="submit">Upload & Build Orbit</button>\
+                  </div>\
+                </form>\
+\
+                <div class="hr"></div>\
+\
+                <div id="network" style="height:560px;border-radius:14px;border:1px solid var(--line);background:#070a0f"></div>\
+                <div class="muted small" style="margin-top:10px">\
+                  Loaded: <b>\{\{ conn_count \}\}</b> connections \'95 <b>\{\{ company_count \}\}</b> companies\
+                </div>\
+              </div>\
+\
+              <div class="card">\
+                <div style="font-size:16px;font-weight:900">Orbit Breakdown</div>\
+                <div class="hr"></div>\
+\
+                <div class="kpi">\
+                  <div class="card">\
+                    <div class="n">\{\{ company_count \}\}</div>\
+                    <div class="t">Companies</div>\
+                  </div>\
+                  <div class="card">\
+                    <div class="n">\{\{ conn_count \}\}</div>\
+                    <div class="t">People</div>\
+                  </div>\
+                  <div class="card">\
+                    <div class="n">\{\{ (company_count + conn_count) \}\}</div>\
+                    <div class="t">Nodes</div>\
+                  </div>\
+                </div>\
+\
+                <div class="hr"></div>\
+\
+                <div style="font-weight:900;margin-bottom:8px">Top Companies</div>\
+                \{% if companies %\}\
+                  <table class="table">\
+                    <thead><tr><th>Company</th><th>Count</th></tr></thead>\
+                    <tbody>\
+                      \{% for c in companies[:15] %\}\
+                        <tr>\
+                          <td class="small">\{\{ c.company \}\}</td>\
+                          <td class="small muted">\{\{ c.count \}\}</td>\
+                        </tr>\
+                      \{% endfor %\}\
+                    </tbody>\
+                  </table>\
+                \{% else %\}\
+                  <div class="muted small">Upload a CSV to populate the orbit.</div>\
+                \{% endif %\}\
+\
+                <div class="hr"></div>\
+                <div class="muted small">\
+                  Click nodes in the graph to see tooltips. The orbit layout is deterministic (rings) so it stays readable during your creative session.\
+                </div>\
+              </div>\
+            </div>\
+\
+            <script>\
+              // ----- Data from server -----\
+              const companyList = \{\{ company_list | tojson \}\};\
+              const peopleList = \{\{ people | tojson \}\};\
+\
+              // Build nodes & edges:\
+              // Companies = outer ring\
+              // People = inner ring\
+              const nodes = [];\
+              const edges = [];\
+\
+              // Center anchor (not displayed) helps keep orbit stable\
+              const CENTER_ID = "CENTER";\
+              nodes.push(\{ id: CENTER_ID, label: "", shape: "dot", size: 1, physics: false, fixed: true, x: 0, y: 0, color: \{ opacity: 0 \} \});\
+\
+              // Orbit radii (tweak if you want)\
+              const OUTER_R = 320;\
+              const INNER_R = 175;\
+\
+              // Place companies evenly around outer ring\
+              const nCompanies = Math.max(companyList.length, 1);\
+              const companyIndex = \{\};\
+              for (let i = 0; i < companyList.length; i++) \{\
+                const c = companyList[i].company;\
+                companyIndex[c] = i;\
+\
+                const angle = (2 * Math.PI * i) / nCompanies;\
+                const x = OUTER_R * Math.cos(angle);\
+                const y = OUTER_R * Math.sin(angle);\
+\
+                nodes.push(\{\
+                  id: "CO_" + i,\
+                  label: c,\
+                  x, y,\
+                  fixed: true,\
+                  physics: false,\
+                  shape: "box",\
+                  margin: 10,\
+                  font: \{ size: 14, color: "#e8eef7" \},\
+                  color: \{\
+                    background: "#0c1322",\
+                    border: "#243043",\
+                    highlight: \{ background: "#1b2640", border: "#3a4a66" \}\
+                  \},\
+                  title: `$\{c\} ($\{companyList[i].count\} connections)`\
+                \});\
+              \}\
+\
+              // Place people around inner ring\
+              const nPeople = Math.max(peopleList.length, 1);\
+              for (let i = 0; i < peopleList.length; i++) \{\
+                const p = peopleList[i];\
+                const angle = (2 * Math.PI * i) / nPeople;\
+                const x = INNER_R * Math.cos(angle);\
+                const y = INNER_R * Math.sin(angle);\
+\
+                const label = p.name || "(No Name)";\
+                const tooltip = [\
+                  `<b>$\{label\}</b>`,\
+                  p.title ? `<div>$\{p.title\}</div>` : "",\
+                  p.location ? `<div class="muted">$\{p.location\}</div>` : "",\
+                  p.company ? `<div style="margin-top:6px">\uc0\u55356 \u57314  $\{p.company\}</div>` : "",\
+                  p.linkedin_url ? `<div style="margin-top:6px"><a href="$\{p.linkedin_url\}" target="_blank">Open LinkedIn</a></div>` : ""\
+                ].join("");\
+\
+                const nodeId = "PE_" + p.id;\
+                nodes.push(\{\
+                  id: nodeId,\
+                  label: label,\
+                  x, y,\
+                  fixed: true,\
+                  physics: false,\
+                  shape: "dot",\
+                  size: 10,\
+                  font: \{ size: 12, color: "#e8eef7" \},\
+                  color: \{\
+                    background: "#7c5cff",\
+                    border: "#3a4a66",\
+                    highlight: \{ background: "#22c55e", border: "#3a4a66" \}\
+                  \},\
+                  title: tooltip\
+                \});\
+\
+                // Edge person -> company\
+                const idx = companyIndex[p.company] ?? null;\
+                if (idx !== null) \{\
+                  edges.push(\{\
+                    from: nodeId,\
+                    to: "CO_" + idx,\
+                    arrows: "",\
+                    color: \{ color: "#243043" \},\
+                    width: 1\
+                  \});\
+                \}\
+              \}\
+\
+              // Render with vis-network\
+              const container = document.getElementById("network");\
+              const data = \{\
+                nodes: new vis.DataSet(nodes),\
+                edges: new vis.DataSet(edges)\
+              \};\
+\
+              const options = \{\
+                interaction: \{ hover: true, tooltipDelay: 80 \},\
+                physics: \{ enabled: false \},\
+                layout: \{ improvedLayout: false \},\
+                edges: \{ smooth: \{ type: "continuous" \} \}\
+              \};\
+\
+              new vis.Network(container, data, options);\
+            </script>\
+            """,\
+            inv=inv,\
+            conn_count=conn_count,\
+            company_count=company_count,\
+            companies=company_list,\
+            company_list=company_list,\
+            people=people\
+        )\
+\
+    page = header_html + tabs_html + body_inner\
+    return render_page(page, subtitle=f"Investor Profile \'97 \{inv['full_name']\}")\
+\
+\
+@app.route("/investor/<int:investor_id>/edit", methods=["GET", "POST"])\
+def edit_investor(investor_id: int):\
+    db = get_db()\
+    inv = db.execute("SELECT * FROM investors WHERE id = ?", (investor_id,)).fetchone()\
+    if not inv:\
+        flash("Investor not found.")\
+        return redirect(url_for("index"))\
+\
+    if request.method == "POST":\
+        full_name = (request.form.get("full_name") or "").strip()\
+        if not full_name:\
+            flash("Name is required.")\
+            return redirect(url_for("edit_investor", investor_id=investor_id))\
+\
+        db.execute(\
+            """\
+            UPDATE investors\
+            SET full_name=?, email=?, phone=?, location=?, industry=?, firm=?, title=?, linkedin_url=?, notes=?, updated_at=?\
+            WHERE id=?\
+            """,\
+            (\
+                full_name,\
+                (request.form.get("email") or "").strip(),\
+                (request.form.get("phone") or "").strip(),\
+                (request.form.get("location") or "").strip(),\
+                (request.form.get("industry") or "").strip(),\
+                (request.form.get("firm") or "").strip(),\
+                (request.form.get("title") or "").strip(),\
+                (request.form.get("linkedin_url") or "").strip(),\
+                (request.form.get("notes") or "").strip(),\
+                now_iso(),\
+                investor_id,\
+            ),\
+        )\
+        db.commit()\
+        flash("Investor updated.")\
+        return redirect(url_for("investor_profile", investor_id=investor_id, tab="info"))\
+\
+    body = render_template_string(\
+        """\
+        <div class="card">\
+          <div style="font-size:16px;font-weight:900">Edit Investor</div>\
+          <div class="hr"></div>\
+          <form method="POST">\
+            <div class="field">\
+              <label>Full Name *</label>\
+              <input name="full_name" value="\{\{ inv['full_name'] \}\}" required />\
+            </div>\
+\
+            <div class="split">\
+              <div class="field">\
+                <label>Email</label>\
+                <input name="email" value="\{\{ inv['email'] or '' \}\}" />\
+              </div>\
+              <div class="field">\
+                <label>Phone</label>\
+                <input name="phone" value="\{\{ inv['phone'] or '' \}\}" />\
+              </div>\
+            </div>\
+\
+            <div class="split">\
+              <div class="field">\
+                <label>Location</label>\
+                <input name="location" value="\{\{ inv['location'] or '' \}\}" />\
+              </div>\
+              <div class="field">\
+                <label>Industry</label>\
+                <input name="industry" value="\{\{ inv['industry'] or '' \}\}" />\
+              </div>\
+            </div>\
+\
+            <div class="split">\
+              <div class="field">\
+                <label>Firm / Organization</label>\
+                <input name="firm" value="\{\{ inv['firm'] or '' \}\}" />\
+              </div>\
+              <div class="field">\
+                <label>Title</label>\
+                <input name="title" value="\{\{ inv['title'] or '' \}\}" />\
+              </div>\
+            </div>\
+\
+            <div class="field">\
+              <label>LinkedIn URL</label>\
+              <input name="linkedin_url" value="\{\{ inv['linkedin_url'] or '' \}\}" />\
+            </div>\
+\
+            <div class="field">\
+              <label>Notes</label>\
+              <textarea name="notes">\{\{ inv['notes'] or '' \}\}</textarea>\
+            </div>\
+\
+            <div class="right">\
+              <a class="btn" href="\{\{ url_for('investor_profile', investor_id=inv['id'], tab='info') \}\}">Cancel</a>\
+              <button class="btn primary" type="submit">Save</button>\
+            </div>\
+          </form>\
+        </div>\
+        """,\
+        inv=inv\
+    )\
+    return render_page(body, subtitle="Edit investor")\
+\
+\
+@app.route("/investor/<int:investor_id>/delete")\
+def delete_investor(investor_id: int):\
+    db = get_db()\
+    db.execute("DELETE FROM investors WHERE id = ?", (investor_id,))\
+    db.commit()\
+    flash("Investor deleted.")\
+    return redirect(url_for("index"))\
+\
+\
+@app.route("/investor/<int:investor_id>/orbit/upload", methods=["POST"])\
+def upload_orbit(investor_id: int):\
+    db = get_db()\
+    inv = db.execute("SELECT id FROM investors WHERE id=?", (investor_id,)).fetchone()\
+    if not inv:\
+        flash("Investor not found.")\
+        return redirect(url_for("index"))\
+\
+    file = request.files.get("file")\
+    if not file:\
+        flash("No file uploaded.")\
+        return redirect(url_for("investor_profile", investor_id=investor_id, tab="orbit"))\
+\
+    try:\
+        records = parse_connections_csv(file.read())\
+    except Exception as e:\
+        flash(f"CSV parse failed: \{e\}")\
+        return redirect(url_for("investor_profile", investor_id=investor_id, tab="orbit"))\
+\
+    if not records:\
+        flash("No usable rows found in CSV.")\
+        return redirect(url_for("investor_profile", investor_id=investor_id, tab="orbit"))\
+\
+    created_at = now_iso()\
+    inserted = 0\
+    for r in records:\
+        db.execute(\
+            """\
+            INSERT INTO connections\
+            (investor_id, first_name, last_name, full_name, company, position, location, linkedin_url, connected_on, created_at)\
+            VALUES (?,?,?,?,?,?,?,?,?,?)\
+            """,\
+            (\
+                investor_id,\
+                r["first_name"],\
+                r["last_name"],\
+                r["full_name"],\
+                r["company"],\
+                r["position"],\
+                r["location"],\
+                r["linkedin_url"],\
+                r["connected_on"],\
+                created_at,\
+            ),\
+        )\
+        inserted += 1\
+\
+    # bump updated_at\
+    db.execute("UPDATE investors SET updated_at=? WHERE id=?", (now_iso(), investor_id))\
+    db.commit()\
+\
+    flash(f"Orbit uploaded: \{inserted\} connections added.")\
+    return redirect(url_for("investor_profile", investor_id=investor_id, tab="orbit"))\
+\
+\
+@app.route("/investor/<int:investor_id>/orbit/clear")\
+def clear_orbit(investor_id: int):\
+    db = get_db()\
+    db.execute("DELETE FROM connections WHERE investor_id=?", (investor_id,))\
+    db.execute("UPDATE investors SET updated_at=? WHERE id=?", (now_iso(), investor_id))\
+    db.commit()\
+    flash("Orbit cleared.")\
+    return redirect(url_for("investor_profile", investor_id=investor_id, tab="orbit"))\
+\
+\
+if __name__ == "__main__":\
+    app.run(debug=True)\
+}
