@@ -1,0 +1,51 @@
+source,investor_name,filing_type,date,link,node_type,relationship_type
+SEC_13F,HR - Dentgroup LLC,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1867570/000186757026000001/0001867570-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,HR - Wealth Science Advisors LLC,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/2083087/000208308726000001/0002083087-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,HR - OUTFITTERS FINANCIAL LLC,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1846505/000170581926000016/0001705819-26-000016-index.htm,investor,institutional_holdings
+SEC_13F,"HR/A - ARKANSAS FINANCIAL GROUP, INC.",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/764611/000076461126000004/0000764611-26-000004-index.htm,investor,institutional_holdings
+SEC_13F,"HR/A - ARKANSAS FINANCIAL GROUP, INC.",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/764611/000076461126000003/0000764611-26-000003-index.htm,investor,institutional_holdings
+SEC_13F,"HR/A - ARKANSAS FINANCIAL GROUP, INC.",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/764611/000076461126000002/0000764611-26-000002-index.htm,investor,institutional_holdings
+SEC_13F,"HR - New Perspectives, Inc",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1909565/000190956526000001/0001909565-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,HR - ATWOOD & PALMER INC,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1044929/000104492926000002/0001044929-26-000002-index.htm,investor,institutional_holdings
+SEC_13F,"NT - RWM Capital, LLC",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1908905/000190890526000002/0001908905-26-000002-index.htm,investor,institutional_holdings
+SEC_13F,"NT - Elite Income Advisors, Inc.",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/2097512/000209751226000001/0002097512-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,HR - First Financial Group Corp,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/2054920/000205492026000001/0002054920-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,"HR - CORNERSTONE ENTERPRISES, LLC",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1987314/000198731426000001/0001987314-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,"HR - Nadler Financial Group, Inc.",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1541787/000154178726000005/0001541787-26-000005-index.htm,investor,institutional_holdings
+SEC_13F,HR - CABANA LLC,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1688539/000168853926000001/0001688539-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,HR - Glassman Wealth Services,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1642160/000164216026000001/0001642160-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,HR - Arizona State Retirement System,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1558481/000089706926000191/0000897069-26-000191-index.htm,investor,institutional_holdings
+SEC_13F,"HR - FISCHER INVESTMENT STRATEGIES, LLC",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1977444/000117266126000372/0001172661-26-000372-index.htm,investor,institutional_holdings
+SEC_13F,"HR - ARKANSAS FINANCIAL GROUP, INC.",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/764611/000076461126000001/0000764611-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,"HR - Diversified Enterprises, LLC",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/2037264/000117266126000371/0001172661-26-000371-index.htm,investor,institutional_holdings
+SEC_13F,HR - EnRich Financial Partners LLC,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1955091/000195509126000001/0001955091-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,HR - WINDWARD CAPITAL MANAGEMENT CO /CA,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1078635/000117266126000370/0001172661-26-000370-index.htm,investor,institutional_holdings
+SEC_13F,HR - Kerusso Capital Management LLC,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/2029597/000117266126000369/0001172661-26-000369-index.htm,investor,institutional_holdings
+SEC_13F,NT - Paradice Investment Management Pty Ltd,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1623378/000117266126000368/0001172661-26-000368-index.htm,investor,institutional_holdings
+SEC_13F,HR - Paradice Investment Management LLC,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1620275/000117266126000367/0001172661-26-000367-index.htm,investor,institutional_holdings
+SEC_13F,HR - U S GLOBAL INVESTORS INC,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/754811/000143774926002320/0001437749-26-002320-index.htm,investor,institutional_holdings
+SEC_13F,HR - SP Asset Management LLC,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1962086/000196208626000001/0001962086-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,HR - Mountain Capital Investment Advisors Inc.,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1714506/000195175726000326/0001951757-26-000326-index.htm,investor,institutional_holdings
+SEC_13F,NT - Citizens & Northern Bank,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1520684/000110465926007439/0001104659-26-007439-index.htm,investor,institutional_holdings
+SEC_13F,"HR - Aspen Wealth Strategies, LLC",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1972517/000195175726000325/0001951757-26-000325-index.htm,investor,institutional_holdings
+SEC_13F,HR - REDW Wealth LLC,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1688931/000168893126000003/0001688931-26-000003-index.htm,investor,institutional_holdings
+SEC_13F,"HR - Spectrum Investment Advisors, Inc.",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1856042/000089271226000048/0000892712-26-000048-index.htm,investor,institutional_holdings
+SEC_13F,"HR - Briaud Financial Planning, Inc",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1800586/000195175726000324/0001951757-26-000324-index.htm,investor,institutional_holdings
+SEC_13F,"HR - WPG Advisers, LLC",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/2067343/000206734326000001/0002067343-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,HR - CORA CAPITAL ADVISORS LLC,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1964530/000195175726000323/0001951757-26-000323-index.htm,investor,institutional_holdings
+SEC_13F,HR - Field & Main Bank,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1594492/000159449226000001/0001594492-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,HR - CITIZENS & NORTHERN CORP,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/810958/000110465926007427/0001104659-26-007427-index.htm,investor,institutional_holdings
+SEC_13F,HR - LIBRA WEALTH LLC,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1925385/000195175726000322/0001951757-26-000322-index.htm,investor,institutional_holdings
+SEC_13F,HR - MEMBERS WEALTH LLC,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/2059574/000195175726000321/0001951757-26-000321-index.htm,investor,institutional_holdings
+SEC_13F,HR - AXIS CAPITAL HOLDINGS LTD,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1214816/000121481626000068/0001214816-26-000068-index.htm,investor,institutional_holdings
+SEC_13F,HR - Gold Investment Management Ltd.,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/2006008/000200600826000001/0002006008-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,"HR - Mowery & Schoenfeld Wealth Management, LLC",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/2019946/000201994626000001/0002019946-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,HR - CADINHA & CO LLC,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/923469/000092346926000001/0000923469-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,"HR - AGP FRANKLIN, LLC",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/2056566/000195175726000320/0001951757-26-000320-index.htm,investor,institutional_holdings
+SEC_13F,HR - Chicago Partners Investment Group LLC,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1563525/000156352526000001/0001563525-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,"HR - Quent Long Short Global Small Cap Fund, LP",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1805114/000180511426000001/0001805114-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,HR - N.E.W. Advisory Services LLC,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1803456/000180345626000001/0001803456-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,"HR - LifeSteps Financial, Inc.",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1801373/000180137326000001/0001801373-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,HR - CAPE ANN SAVINGS BANK,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/936938/000093693826000001/0000936938-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,HR - Geneos Wealth Management Inc.,13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1764754/000176475426000001/0001764754-26-000001-index.htm,investor,institutional_holdings
+SEC_13F,"NT - GUGGENHEIM FUNDS INVESTMENT ADVISORS, LLC",13F-HR,2026-01-28,https://www.sec.gov/Archives/edgar/data/1280782/000128078226000001/0001280782-26-000001-index.htm,investor,institutional_holdings
